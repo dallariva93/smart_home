@@ -90,6 +90,41 @@ Lo script impacchetta solo il codice, lo estrae sulla VM, riavvia il servizio e 
 che sia `active`. I segreti e i file di stato sulla VM non vengono toccati.
 > Se PowerShell blocca lo script: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
 
+## Deploy automatico (push-to-deploy via GitHub Actions)
+Il workflow [`.github/workflows/deploy-backend.yml`](../.github/workflows/deploy-backend.yml)
+fa il deploy da solo a ogni **push su `main`** che tocca `backend/**` (oppure a mano da
+*Actions → Deploy backend → Run workflow*). Replica la logica di `deploy.ps1` — tarball del
+solo codice → estrazione sulla VM → restart del servizio — ma raggiunge la VM **sul
+tailnet**: il runner entra in Tailscale come nodo effimero, quindi `scp`/`ssh` verso l'host
+privato. Nessuna porta SSH va esposta su Internet. Le dipendenze vengono reinstallate solo
+se `requirements.txt` è cambiato (o forzando l'input `deps` nel run manuale). Il `.env` e i
+file di stato/segreti sulla VM **non** vengono toccati: restano solo sulla VM.
+
+### Setup una-tantum
+1. **Tailscale**: nella admin console crea un *OAuth client* (Settings → OAuth clients) con
+   scope **Devices: write** e un tag (es. `tag:ci`). Nelle ACL autorizza `tag:ci` a
+   raggiungere la VM sulla **porta 22**.
+2. **Chiave SSH**: usa la stessa coppia della `deploy.ps1` (la pubblica è già in
+   `~/.ssh/authorized_keys` di `ubuntu` sulla VM). Serve solo la **privata** come secret.
+3. **Sudo**: la `ubuntu` sulla VM deve poter fare `sudo systemctl restart` senza password
+   (già necessario per `deploy.ps1`).
+4. In **Settings → Secrets and variables → Actions** del repo imposta:
+
+   | Tipo | Nome | Valore |
+   |------|------|--------|
+   | Secret | `TS_OAUTH_CLIENT_ID` | Client ID OAuth Tailscale |
+   | Secret | `TS_OAUTH_SECRET` | Client secret OAuth Tailscale |
+   | Secret | `DEPLOY_SSH_KEY` | chiave SSH **privata** (accesso a `ubuntu@VM`) |
+   | Secret | `DEPLOY_KNOWN_HOSTS` | *(opzionale)* output di `ssh-keyscan <host-tailnet>` |
+   | Variable | `DEPLOY_HOST` | nome MagicDNS o IP tailnet della VM (es. `clima-backend`) |
+   | Variable | `DEPLOY_USER` | *(opzionale, default `ubuntu`)* |
+   | Variable | `DEPLOY_REMOTE_DIR` | *(opzionale, default `clima/backend`)* |
+   | Variable | `DEPLOY_SERVICE` | *(opzionale, default `clima-backend`)* |
+
+> In alternativa all'OAuth puoi usare un singolo auth key riusabile come secret
+> `TS_AUTHKEY` (vedi blocco commentato nello step *Connetti al tailnet* del workflow).
+> `deploy.ps1` resta valido come fallback manuale.
+
 ## Prese Tuya / Smart Life (opzionale)
 Per vedere e comandare le prese Smart Life dall'app:
 1. Crea un account su **iot.tuya.com** (Tuya IoT Platform).

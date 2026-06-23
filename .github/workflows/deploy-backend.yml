@@ -1,0 +1,145 @@
+name: Deploy backend
+
+# Push-to-deploy del backend sulla VM Oracle.
+# Replica la logica di backend/deploy.ps1 (tarball del solo codice -> estrazione
+# sulla VM -> restart del servizio systemd), ma la VM viene raggiunta SUL TAILNET:
+# il runner entra in Tailscale come nodo effimero e poi fa scp/ssh verso l'host
+# privato della VM. Nessuna porta SSH va esposta su Internet.
+#
+# Segreti/variabili da impostare nel repo (Settings -> Secrets and variables -> Actions):
+#   Secrets:
+#     TS_OAUTH_CLIENT_ID      Client ID OAuth Tailscale (consigliato) — vedi note sotto
+#     TS_OAUTH_SECRET         Client secret OAuth Tailscale
+#     DEPLOY_SSH_KEY          Chiave SSH privata con accesso a ubuntu@VM (la stessa coppia
+#                             della deploy.ps1; la pubblica deve stare in authorized_keys)
+#     DEPLOY_KNOWN_HOSTS      (opzionale) output di `ssh-keyscan <host-tailnet>` per pinnare
+#                             l'host key. Se assente, l'host key viene accettata al volo.
+#   Variables (o Secrets):
+#     DEPLOY_HOST             Nome MagicDNS o IP tailnet della VM (es. clima-backend)
+#     DEPLOY_USER             Utente SSH sulla VM (default: ubuntu)
+#     DEPLOY_REMOTE_DIR       Cartella sulla VM relativa a ~ (default: clima/backend)
+#     DEPLOY_SERVICE          Nome del servizio systemd (default: clima-backend)
+#
+# Note Tailscale: crea un OAuth client (Admin console -> Settings -> OAuth clients) con
+# scope "Devices: write" e un tag (es. tag:ci). Nelle ACL del tailnet autorizza tag:ci a
+# raggiungere la VM sulla porta 22. In alternativa all'OAuth puoi usare un auth key
+# riusabile in un unico secret TS_AUTHKEY (vedi blocco commentato nello step Tailscale).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch:
+    inputs:
+      deps:
+        description: "Reinstalla le dipendenze (pip install -r requirements.txt)"
+        type: boolean
+        default: false
+      send_env:
+        description: "NON usare in CI: il .env vive solo sulla VM"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # serve per capire se requirements.txt è cambiato
+
+      - name: Connetti al tailnet
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          # In alternativa all'OAuth, commenta le tre righe sopra e usa:
+          # authkey: ${{ secrets.TS_AUTHKEY }}
+
+      - name: Configura la chiave SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [ -n "${DEPLOY_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            echo "::warning::DEPLOY_KNOWN_HOSTS non impostato: uso StrictHostKeyChecking=accept-new"
+          fi
+          chmod 644 ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Impacchetta il codice
+        run: |
+          set -euo pipefail
+          tar --exclude=__pycache__ --exclude='*.pyc' \
+            -czf /tmp/clima-backend.tgz -C backend app requirements.txt deploy
+          ls -l /tmp/clima-backend.tgz
+
+      - name: Decidi se reinstallare le dipendenze
+        id: deps
+        run: |
+          set -euo pipefail
+          force="${{ github.event.inputs.deps || 'false' }}"
+          changed=false
+          if git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" 2>/dev/null \
+              | grep -q '^backend/requirements.txt$'; then
+            changed=true
+          fi
+          if [ "$force" = "true" ] || [ "$changed" = "true" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Dipendenze: verranno reinstallate (force=$force changed=$changed)"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Dipendenze: saltate (requirements.txt invariato)"
+          fi
+
+      - name: Deploy sulla VM
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER || 'ubuntu' }}
+          REMOTE_DIR: ${{ vars.DEPLOY_REMOTE_DIR || 'clima/backend' }}
+          SERVICE: ${{ vars.DEPLOY_SERVICE || 'clima-backend' }}
+          INSTALL_DEPS: ${{ steps.deps.outputs.run }}
+        run: |
+          set -euo pipefail
+          : "${DEPLOY_HOST:?Imposta la variabile DEPLOY_HOST (host tailnet della VM)}"
+          SSH_OPTS="-i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20"
+          TARGET="${DEPLOY_USER}@${DEPLOY_HOST}"
+
+          echo "1/3  Trasferisco ed estraggo sulla VM ($TARGET)..."
+          scp $SSH_OPTS /tmp/clima-backend.tgz "${TARGET}:/tmp/clima-backend.tgz"
+          ssh $SSH_OPTS "$TARGET" \
+            "mkdir -p ~/${REMOTE_DIR} && tar -xzf /tmp/clima-backend.tgz -C ~/${REMOTE_DIR} && rm -f /tmp/clima-backend.tgz"
+
+          if [ "${INSTALL_DEPS}" = "true" ]; then
+            echo "2/3  Installo le dipendenze..."
+            ssh $SSH_OPTS "$TARGET" \
+              "cd ~/${REMOTE_DIR} && .venv/bin/pip install -q -r requirements.txt"
+          else
+            echo "2/3  (dipendenze saltate; requirements.txt invariato)"
+          fi
+
+          echo "3/3  Riavvio il servizio..."
+          status=$(ssh $SSH_OPTS "$TARGET" \
+            "sudo systemctl restart ${SERVICE} && sleep 2 && systemctl is-active ${SERVICE}" || true)
+          echo "Stato servizio: ${status}"
+          if [ "$status" != "active" ]; then
+            echo "::error::Il servizio risulta '${status}'. Controlla: journalctl -u ${SERVICE} -n 50"
+            ssh $SSH_OPTS "$TARGET" "journalctl -u ${SERVICE} -n 30 --no-pager" || true
+            exit 1
+          fi
+          echo "OK: deploy completato, servizio attivo."

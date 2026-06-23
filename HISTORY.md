@@ -7,6 +7,23 @@
 
 ---
 
+## 2026-06-23 — Push-to-deploy backend con GitHub Actions
+
+- Aggiunto workflow `.github/workflows/deploy-backend.yml`: deploy automatico a ogni
+  **push su `main`** che tocca `backend/**` (+ run manuale `workflow_dispatch`). Replica la
+  logica di `deploy.ps1` (tarball del solo codice → estrazione sulla VM → restart del
+  servizio + verifica `is-active`), ma raggiunge la VM **sul tailnet**: il runner entra in
+  Tailscale come nodo effimero (`tailscale/github-action`, OAuth client + `tag:ci`), poi
+  `scp`/`ssh`. Nessuna porta SSH esposta su Internet; `.env`/segreti/stato sulla VM non
+  toccati. Dipendenze reinstallate solo se `requirements.txt` è cambiato (o input `deps`).
+  `concurrency` per evitare deploy sovrapposti.
+- Secrets/variables richiesti (documentati in `backend/README.md` §"Deploy automatico"):
+  `TS_OAUTH_CLIENT_ID`/`TS_OAUTH_SECRET`, `DEPLOY_SSH_KEY` (privata, stessa coppia della
+  ps1), opz. `DEPLOY_KNOWN_HOSTS`, e var `DEPLOY_HOST` (+ opz. `DEPLOY_USER`/`_REMOTE_DIR`/
+  `_SERVICE`). ACL tailnet: `tag:ci` → VM porta 22; sudo NOPASSWD per `systemctl restart`.
+- Realizza l'upgrade "push-to-deploy" annotato nella voce precedente. `deploy.ps1` resta
+  come fallback manuale.
+
 ## 2026-06-23 — Deploy backend con script (`deploy.ps1`)
 
 - Aggiunto `backend/deploy.ps1`: impacchetta solo il codice (app/, requirements.txt,
