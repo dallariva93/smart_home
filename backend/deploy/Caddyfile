@@ -1,0 +1,7 @@
+# Caddy: reverse proxy con HTTPS automatico (Let's Encrypt) davanti a uvicorn.
+# Sostituisci il dominio con il tuo (serve un dominio che punta all'IP della VM Oracle).
+# Avvio: sudo caddy run --config /etc/caddy/Caddyfile
+
+clima.tuodominio.it {
+    reverse_proxy 127.0.0.1:8000
+}

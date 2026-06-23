@@ -1,0 +1,10 @@
+.env
+token_store_backend.json
+token_store_backend.json.tmp
+nightmode_config.json
+nightmode_config.json.tmp
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.log

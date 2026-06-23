@@ -1,0 +1,8 @@
+.env
+token_store.json
+token_store.json.tmp
+__pycache__/
+*.pyc
+*.log
+.venv/
+venv/

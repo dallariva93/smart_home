@@ -1,0 +1,16 @@
+[Unit]
+Description=Clima Casa - backend FastAPI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/clima/backend
+Environment=PATH=/home/ubuntu/clima/backend/.venv/bin
+ExecStart=/home/ubuntu/clima/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
