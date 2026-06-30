@@ -5,16 +5,19 @@
 
     <application
         android:allowBackup="true"
-        android:label="Clima Casa"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar"
-        android:usesCleartextTraffic="true">
-        <!-- usesCleartextTraffic=true comodo per test in LAN su http://IP:8000.
-             In produzione il backend è dietro HTTPS (Caddy/Cloudflare): puoi rimuoverlo. -->
+        android:theme="@style/Theme.ClimaCasa"
+        android:usesCleartextTraffic="${usesCleartextTraffic}">
+        <!-- usesCleartextTraffic è iniettato per build type: true in debug (test LAN su
+             http://IP:8000), false in release (il backend è solo HTTPS via tailnet/Caddy). -->
 
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:theme="@style/Theme.ClimaCasa">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

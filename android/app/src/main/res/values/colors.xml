@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sfondo finestra: pari al background del tema scuro, evita il flash bianco all'avvio. -->
+    <color name="ink">#FF070B11</color>
+    <color name="ic_launcher_background">#FF070B11</color>
+</resources>

@@ -7,6 +7,29 @@
 
 ---
 
+## 2026-06-30 — App Android production-ready + redesign "scuro elettrico"
+
+- **Nuova identità visiva** (tema dark-first di brand, accenti neon ciano/lime): riscritto
+  `Theme.kt` con palette custom, tipografia e color scheme Material3 (niente più solo
+  colori dinamici). Pensato per reggere il confronto con SmartThings & simili.
+- **Refactor UI**: il monolite `MainActivity.kt` (737 righe) è stato spezzato in
+  `MainActivity.kt` (Activity edge-to-edge + NavHost), `Components.kt` (design system
+  riutilizzabile: `GlowCard`, `CircularThermostat` a gauge, `ChipRow` con icone, stati
+  vuoto/errore/caricamento, `BackScaffold`), `Charts.kt` (grafici Canvas multi-serie con
+  riempimento a gradiente) e `Screens.kt` (tutte le schermate ridisegnate).
+- **Dashboard**: hero "Casa" con media temperatura e n° attivi, card Away/Eco, card
+  dispositivo con stato luminoso, **pull-to-refresh**, stati vuoto/errore curati.
+- **Controllo**: termostato circolare neon (arco 270° con glow) come elemento centrale,
+  +/- per il setpoint, chip modalità/ventola/oscillazione con icone.
+- **Hardening produzione** (tutto tranne firma APK): icona **adattiva** (gauge termostato,
+  vettoriale) + monochrome, tema XML `Theme.ClimaCasa` (no flash bianco all'avvio),
+  `strings.xml`/`colors.xml`. Build **release con R8/minify + shrink risorse** e
+  `proguard-rules.pro` (serialization/Retrofit/OkHttp). `usesCleartextTraffic` per build
+  type: **true in debug** (test LAN), **false in release** (solo HTTPS). Versione → **2.0**
+  (`versionCode 2`). Aggiunta dipendenza `compose.animation`.
+- Nessuna nuova funzionalità di backend: redesign + rifinitura delle feature già presenti.
+- Nota: build/APK non verificati nel container (manca l'Android SDK); codice rivisto a mano.
+
 ## 2026-06-23 — Push-to-deploy backend con GitHub Actions
 
 - Aggiunto workflow `.github/workflows/deploy-backend.yml`: deploy automatico a ogni

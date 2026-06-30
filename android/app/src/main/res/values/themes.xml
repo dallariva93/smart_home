@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tema scuro di brand. Parent framework (nessuna dipendenza XML extra dato che
+         l'UI è interamente Compose). enableEdgeToEdge() gestisce le system bar a runtime. -->
+    <style name="Theme.ClimaCasa" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ink</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
